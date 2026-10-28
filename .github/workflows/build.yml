@@ -1,0 +1,65 @@
+name: Build LegacyCraft APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "Upstream Amethyst-Android commit/branch/tag (default: pinned in UPSTREAM_REF)"
+        required: false
+        default: ""
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout LegacyCraft
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Fetch upstream + apply overlay
+        env:
+          UPSTREAM_REF_INPUT: ${{ inputs.upstream_ref }}
+        run: bash scripts/bootstrap.sh 2>&1 | tee bootstrap.log
+
+      # Pre-built Android OpenJDK 8 (ARM/ARM64/x86/x86_64), same source upstream CI uses.
+      - name: Get JRE 8
+        uses: dawidd6/action-download-artifact@v9
+        with:
+          workflow: build.yml
+          path: upstream/app_pojavlauncher/src/main/assets/components/jre
+          workflow_conclusion: completed
+          repo: AngelAuraMC/angelauramc-openjdk-build
+          branch: buildjre8
+          name: jre8-pojav
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          validate-wrappers: false
+          gradle-version: "9.6.1"
+
+      - name: Build debug APK
+        run: bash scripts/build.sh 2>&1 | tee build.log
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LegacyCraft-debug-apk
+          path: dist/*
+          if-no-files-found: warn
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            bootstrap.log
+            build.log
